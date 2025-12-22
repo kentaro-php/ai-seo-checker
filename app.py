@@ -1,17 +1,17 @@
 import streamlit as st
 import openai
 import pandas as pd
+import datetime
+import os
 
 # --- ページ設定 ---
 st.set_page_config(layout="wide", page_title="AI SEO Checker")
 
 # --- URLパラメータを取得してモード判定 ---
-# URLの末尾に ?mode=admin がついているか確認
 query_params = st.query_params
 is_admin_mode = query_params.get("mode") == "admin"
 
-# --- CSS設定 ---
-# 管理者モードでなければ、サイドバーやメニューを隠す
+# --- CSS設定（管理者以外はサイドバーを隠す） ---
 if not is_admin_mode:
     hide_streamlit_style = """
                 <style>
@@ -31,7 +31,29 @@ except:
     st.stop()
 
 # ==========================================
-#  ここから画面の分岐
+#  ログ保存用の関数
+# ==========================================
+LOG_FILE = 'search_logs.csv'
+
+def save_log(keyword, brand_name, result):
+    """ユーザーの検索内容をCSVに保存する"""
+    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    # データフレームを作成
+    new_data = pd.DataFrame({
+        '日時': [now],
+        'キーワード': [keyword],
+        '自社名': [brand_name],
+        'AIの回答': [result]
+    })
+    
+    # ファイルがある場合は追記、なければ新規作成
+    if os.path.exists(LOG_FILE):
+        new_data.to_csv(LOG_FILE, mode='a', header=False, index=False)
+    else:
+        new_data.to_csv(LOG_FILE, mode='w', header=True, index=False)
+
+# ==========================================
+#  画面の分岐
 # ==========================================
 
 if is_admin_mode:
@@ -41,18 +63,31 @@ if is_admin_mode:
     st.sidebar.title("🔧 管理者メニュー")
     st.sidebar.success("管理者モードでログイン中")
     
-    st.title("📊 管理者ダッシュボード")
-    st.write("ここは管理者（あなた）しか見られないページです。")
+    st.title("📊 検索ログ・分析ダッシュボード")
+    st.write("ユーザーが実際に検索した内容と、AIの回答履歴です。")
     
-    # ダミーデータのグラフなどを表示
-    st.subheader("今月の検索数推移")
-    chart_data = pd.DataFrame({
-        '日付': pd.date_range(start='2024-01-01', periods=7),
-        '検索回数': [10, 15, 8, 22, 18, 30, 25]
-    })
-    st.line_chart(chart_data.set_index('日付'))
-    
-    st.info("※この画面は URL末尾に `?mode=admin` をつけた時だけ表示されます。")
+    # CSVファイルの読み込みと表示
+    if os.path.exists(LOG_FILE):
+        df = pd.read_csv(LOG_FILE)
+        
+        # 最新順に並び替え
+        df = df.sort_values('日時', ascending=False)
+        
+        st.subheader(f"📝 検索履歴 (全{len(df)}件)")
+        
+        # テーブル表示（ダウンロードボタン付き）
+        st.dataframe(df, use_container_width=True)
+        
+        # CSVダウンロードボタン
+        csv = df.to_csv(index=False).encode('utf-8_sig')
+        st.download_button(
+            "📥 ログをダウンロード (CSV)",
+            data=csv,
+            file_name='seo_check_logs.csv',
+            mime='text/csv',
+        )
+    else:
+        st.info("まだ検索データがありません。")
 
 else:
     # ---------------------------
@@ -73,6 +108,7 @@ else:
         else:
             with st.spinner('AIが分析中...'):
                 try:
+                    # AI分析実行
                     response = openai.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
@@ -82,11 +118,14 @@ else:
                         max_tokens=500
                     )
                     
-                    result = response.choices[0].message.content
+                    result_text = response.choices[0].message.content
+                    
+                    # ★ここでログを保存！
+                    save_log(keyword, brand_name, result_text)
                     
                     st.success("分析完了！")
                     st.markdown("### 🔍 分析結果")
-                    st.write(result)
+                    st.write(result_text)
                     
                 except Exception as e:
                     st.error(f"エラーが発生しました: {e}")
