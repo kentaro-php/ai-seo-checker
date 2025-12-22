@@ -1,62 +1,86 @@
 import streamlit as st
 import openai
+import pandas as pd
 
 # --- ページ設定 ---
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="AI SEO Checker")
 
-# --- CSSで余計なメニューやヘッダーを隠す ---
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            [data-testid="stSidebar"] {display: none;} /* サイドバーを完全に隠す */
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+# --- URLパラメータを取得してモード判定 ---
+# URLの末尾に ?mode=admin がついているか確認
+query_params = st.query_params
+is_admin_mode = query_params.get("mode") == "admin"
 
-# --- APIキーの読み込み（Secretsから） ---
+# --- CSS設定 ---
+# 管理者モードでなければ、サイドバーやメニューを隠す
+if not is_admin_mode:
+    hide_streamlit_style = """
+                <style>
+                #MainMenu {visibility: hidden;}
+                footer {visibility: hidden;}
+                header {visibility: hidden;}
+                [data-testid="stSidebar"] {display: none;}
+                </style>
+                """
+    st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
+# --- APIキーの読み込み ---
 try:
     openai.api_key = st.secrets["OPENAI_API_KEY"]
 except:
-    st.error("APIキーが設定されていません。管理者に連絡してください。")
+    st.error("APIキー設定エラー：SecretsにOPENAI_API_KEYを設定してください。")
     st.stop()
 
-# --- メイン画面 ---
-st.title("🤖 AI検索・推奨チェッカー")
-st.write("ChatGPTなどのAI検索で、**あなたのサービスが「おすすめ」として紹介されているか**を確認します。")
+# ==========================================
+#  ここから画面の分岐
+# ==========================================
 
-# 入力フォーム（カラム分けで見やすく）
-col1, col2 = st.columns(2)
-with col1:
-    keyword = st.text_input("狙っているキーワード", placeholder="例：渋谷 居酒屋 デート、会計ソフト おすすめ")
-with col2:
-    brand_name = st.text_input("確認したい自社名", placeholder="例：〇〇ダイニング、freee")
+if is_admin_mode:
+    # ---------------------------
+    # 📊 管理者ダッシュボード（裏画面）
+    # ---------------------------
+    st.sidebar.title("🔧 管理者メニュー")
+    st.sidebar.success("管理者モードでログイン中")
+    
+    st.title("📊 管理者ダッシュボード")
+    st.write("ここは管理者（あなた）しか見られないページです。")
+    
+    # ダミーデータのグラフなどを表示（必要に応じてカスタマイズしてください）
+    st.subheader("今月の検索数推移")
+    chart_data = pd.DataFrame({
+        '日付': pd.date_range(start='2024-01-01', periods=7),
+        '検索回数': [10, 15, 8, 22, 18, 30, 25]
+    })
+    st.line_chart(chart_data.set_index('日付'))
+    
+    st.info("※この画面は URL末尾に `?mode=admin` をつけた時だけ表示されます。")
 
-# 実行ボタン
-if st.button("チェック開始", type="primary"):
-    if not keyword or not brand_name:
-        st.warning("キーワードと自社名を入力してください。")
-    else:
-        with st.spinner('AIが検索結果を分析中...（これには数秒〜数十秒かかります）'):
-            try:
-                # --- ここでOpenAIに問い合わせ ---
-                # ※GPT-4o-miniを使用（安価で高速）
-                response = openai.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "あなたは優秀なSEOコンサルタントです。ユーザーの質問に対し、特定のブランドが推奨されているかをシミュレーションして答えてください。"},
-                        {"role": "user", "content": f"質問：「{keyword}」について教えて。\n\nこの回答の中に、「{brand_name}」という名前は好意的に登場しますか？\n登場する場合は「推奨されています」と理由を、登場しない場合は「推奨されていません」と対策を簡潔に答えて。"}
-                    ],
-                    max_tokens=500
-                )
-                
-                result = response.choices[0].message.content
-                
-                # --- 結果表示 ---
-                st.success("分析完了！")
-                st.markdown("### 🔍 分析結果")
-                st.write(result)
-                
-            except Exception as e:
-                st.error(f"エラーが発生しました: {e}")
+else:
+    # ---------------------------
+    # 🔍 一般ユーザー向け画面（表画面）
+    # ---------------------------
+    st.title("🤖 AI検索・推奨チェッカー")
+    st.write("ChatGPTなどのAI検索で、**あなたのサービスが「おすすめ」として紹介されているか**を確認します。")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        keyword = st.text_input("狙っているキーワード", placeholder="例：渋谷 居酒屋 デート")
+    with col2:
+        brand_name = st.text_input("確認したい自社名", placeholder="例：〇〇ダイニング")
+
+    if st.button("チェック開始", type="primary"):
+        if not keyword or not brand_name:
+            st.warning("キーワードと自社名を入力してください。")
+        else:
+            with st.spinner('AIが分析中...'):
+                try:
+                    response = openai.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "あなたはSEOコンサルタントです。"},
+                            {"role": "user", "content": f"質問：「{keyword}」について教えて。\n\nこの回答の中に、「{brand_name}」は推奨されていますか？"}
+                        ]
+                    )
+                    st.success("分析完了！")
+                    st.write(response.choices[0].message.content)
+                except Exception as e:
+                    st.error(f"エラー: {e}")
