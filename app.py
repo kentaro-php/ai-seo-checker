@@ -2,7 +2,8 @@ import streamlit as st
 import openai
 import pandas as pd
 import datetime
-import os
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # --- ページ設定 ---
 st.set_page_config(layout="wide", page_title="AI SEO Checker")
@@ -11,7 +12,7 @@ st.set_page_config(layout="wide", page_title="AI SEO Checker")
 query_params = st.query_params
 is_admin_mode = query_params.get("mode") == "admin"
 
-# --- CSS設定（管理者以外はサイドバーを隠す） ---
+# --- CSS設定 ---
 if not is_admin_mode:
     hide_streamlit_style = """
                 <style>
@@ -23,34 +24,39 @@ if not is_admin_mode:
                 """
     st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# --- APIキーの読み込み ---
+# --- APIキーとGoogle認証 ---
 try:
+    # OpenAI
     openai.api_key = st.secrets["OPENAI_API_KEY"]
-except:
-    st.error("APIキー設定エラー：SecretsにOPENAI_API_KEYを設定してください。")
+    
+    # Google Sheets
+    # Secretsから辞書型として読み込む
+    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    
+    # private_keyの改行コード(\n)を正しく変換する処理
+    if "\\n" in creds_dict["private_key"]:
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    
+    # スプレッドシートを開く（名前で指定）
+    sheet_name = "seo_logs" 
+    sheet = client.open(sheet_name).sheet1
+    
+except Exception as e:
+    st.error(f"設定エラー: {e}")
     st.stop()
 
 # ==========================================
-#  ログ保存用の関数
+#  ログ保存用の関数（スプレッドシート版）
 # ==========================================
-LOG_FILE = 'search_logs.csv'
-
-def save_log(keyword, brand_name, result):
-    """ユーザーの検索内容をCSVに保存する"""
+def save_log_to_sheet(keyword, brand_name, result):
+    """ユーザーの検索内容をスプレッドシートに追記する"""
     now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    # データフレームを作成
-    new_data = pd.DataFrame({
-        '日時': [now],
-        'キーワード': [keyword],
-        '自社名': [brand_name],
-        'AIの回答': [result]
-    })
-    
-    # ファイルがある場合は追記、なければ新規作成
-    if os.path.exists(LOG_FILE):
-        new_data.to_csv(LOG_FILE, mode='a', header=False, index=False)
-    else:
-        new_data.to_csv(LOG_FILE, mode='w', header=True, index=False)
+    # 行を追加
+    sheet.append_row([now, keyword, brand_name, result])
 
 # ==========================================
 #  画面の分岐
@@ -58,40 +64,35 @@ def save_log(keyword, brand_name, result):
 
 if is_admin_mode:
     # ---------------------------
-    # 📊 管理者ダッシュボード（裏画面）
+    # 📊 管理者ダッシュボード
     # ---------------------------
     st.sidebar.title("🔧 管理者メニュー")
-    st.sidebar.success("管理者モードでログイン中")
+    st.sidebar.success("管理者モード: Google Sheets連携済み")
     
     st.title("📊 検索ログ・分析ダッシュボード")
-    st.write("ユーザーが実際に検索した内容と、AIの回答履歴です。")
     
-    # CSVファイルの読み込みと表示
-    if os.path.exists(LOG_FILE):
-        df = pd.read_csv(LOG_FILE)
+    if st.button("最新データを読み込む"):
+        st.cache_data.clear()
+    
+    try:
+        # スプレッドシートから全データを取得
+        data = sheet.get_all_records()
         
-        # 最新順に並び替え
-        df = df.sort_values('日時', ascending=False)
-        
-        st.subheader(f"📝 検索履歴 (全{len(df)}件)")
-        
-        # テーブル表示（ダウンロードボタン付き）
-        st.dataframe(df, use_container_width=True)
-        
-        # CSVダウンロードボタン
-        csv = df.to_csv(index=False).encode('utf-8_sig')
-        st.download_button(
-            "📥 ログをダウンロード (CSV)",
-            data=csv,
-            file_name='seo_check_logs.csv',
-            mime='text/csv',
-        )
-    else:
-        st.info("まだ検索データがありません。")
+        if data:
+            df = pd.DataFrame(data)
+            # 日時でソート（新しい順）
+            # もしカラム名がずれている場合は調整が必要ですが、基本はそのまま表示
+            st.subheader(f"📝 検索履歴 (全{len(df)}件)")
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.info("まだデータがありません。")
+            
+    except Exception as e:
+        st.error(f"データの読み込みに失敗しました: {e}")
 
 else:
     # ---------------------------
-    # 🔍 一般ユーザー向け画面（表画面）
+    # 🔍 一般ユーザー向け画面
     # ---------------------------
     st.title("🤖 AI検索・推奨チェッカー")
     st.write("ChatGPTなどのAI検索で、**あなたのサービスが「おすすめ」として紹介されているか**を確認します。")
@@ -108,7 +109,7 @@ else:
         else:
             with st.spinner('AIが分析中...'):
                 try:
-                    # AI分析実行
+                    # AI分析
                     response = openai.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
@@ -120,8 +121,8 @@ else:
                     
                     result_text = response.choices[0].message.content
                     
-                    # ★ここでログを保存！
-                    save_log(keyword, brand_name, result_text)
+                    # ★スプレッドシートに保存
+                    save_log_to_sheet(keyword, brand_name, result_text)
                     
                     st.success("分析完了！")
                     st.markdown("### 🔍 分析結果")
