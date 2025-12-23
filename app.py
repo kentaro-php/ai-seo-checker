@@ -133,7 +133,7 @@ try:
             st.write("") # 埋め込み時の上部マージン調整
 
         with st.container(border=True):
-            st.markdown("### 🔍 自社指名検索チェック")
+            st.markdown("### 🔍 AI検索チェック")
             keyword = st.text_input("検索キーワード", placeholder="例：渋谷 居酒屋 デート")
             company = st.text_input("確認したい自社名", placeholder="例：〇〇ダイニング")
             check_btn = st.button("チェック開始", type="primary")
