@@ -3,69 +3,101 @@ import traceback
 
 # --- 診断モード: エラー捕捉用ラッパー ---
 try:
-    # 1. 基本設定（これが失敗するとOh no画面になることが多い）
+    # 1. 基本設定（必ず最初に記述）
     st.set_page_config(page_title="LLOM Checker", layout="centered")
 
-    # 2. 必要なライブラリのインポートテスト
+    # 2. ライブラリインポート
     import pandas as pd
     import datetime
     import os
     from openai import OpenAI
 
-    # --- ここからメインのアプリ処理 ---
+    # --- メイン処理 ---
 
-   # CSSデザイン（最強力版：CSS + JS注入）
+    # ▼▼▼【修正箇所】最強力版：テキスト検索型JS + CSS ▼▼▼
     st.markdown("""
         <style>
-            /* 1. 標準的なフッター要素を消す */
-            footer {
+            /* 念のためのCSS指定（標準的なクラス用） */
+            footer, header, [data-testid="stFooter"], [data-testid="stToolbar"], [data-testid="stHeader"] {
                 visibility: hidden !important;
                 display: none !important;
                 height: 0px !important;
                 opacity: 0 !important;
+                overflow: hidden !important;
             }
-            
-            /* 2. Streamlitの特定IDを持つフッター領域を消す */
-            [data-testid="stFooter"] {
-                display: none !important;
-                visibility: hidden !important;
-            }
-
-            /* 3. 新しいバージョンで表示されるツールバーや装飾を消す */
-            [data-testid="stToolbar"], [data-testid="stHeader"] {
-                visibility: hidden !important;
-                display: none !important;
-            }
-            
-            /* 4. アプリ全体のラッパー下部の余白を強制的にゼロにする */
+            /* アプリ下部の余白削除 */
             .main .block-container {
                 padding-bottom: 0rem !important;
             }
-            
-            /* 5. iframe埋め込み時のビューワー用フッター対策 */
-            .viewerBadge_container__1QSob {
+            /* iframe埋め込み時の下部バー対策 */
+            .viewerBadge_container__1QSob, .styles_viewerBadge__1yB5_, .viewerFooter_container__2KkK5 {
                 display: none !important;
             }
         </style>
-        
+
         <script>
-            // JavaScriptでダメ押し：DOM要素が見つかり次第、強制的にスタイルを書き換える
-            const hideFooter = () => {
-                const footers = document.querySelectorAll('footer');
-                footers.forEach(f => { f.style.display = 'none'; f.style.visibility = 'hidden'; });
+            // 【最終手段】DOM内のテキストを検索して、該当要素の親を強制的に消す関数
+            function killFooter() {
+                // 1. "Built with Streamlit" を含む要素を探す
+                const allElements = document.querySelectorAll('*');
+                allElements.forEach(el => {
+                    // テキストノードを持ち、かつ "Built with Streamlit" を含む場合
+                    if (el.textContent && el.textContent.includes('Built with Streamlit')) {
+                        // その要素自体、もしくは親要素がフッターっぽい場合は消す
+                        // （誤爆を防ぐため、position: fixed や bottom: 0 のスタイルを持つ親まで遡る）
+                        let target = el;
+                        for (let i = 0; i < 5; i++) { // 親を5階層までチェック
+                            if (!target) break;
+                            const style = window.getComputedStyle(target);
+                            // フッター特有のスタイルやタグ名を検知
+                            if (
+                                target.tagName === 'FOOTER' || 
+                                style.position === 'fixed' || 
+                                style.bottom === '0px' ||
+                                target.getAttribute('data-testid') === 'stFooter' ||
+                                target.className.includes('viewerBadge')
+                            ) {
+                                target.style.display = 'none';
+                                target.style.visibility = 'hidden';
+                                target.style.setProperty('display', 'none', 'important');
+                                break;
+                            }
+                            target = target.parentElement;
+                        }
+                    }
+                });
                 
-                const stFooters = document.querySelectorAll('[data-testid="stFooter"]');
-                stFooters.forEach(f => { f.style.display = 'none'; });
+                // 2. "Fullscreen" ボタンも同様に消す（埋め込みモード用）
+                const buttons = document.querySelectorAll('button');
+                buttons.forEach(btn => {
+                    if (btn.textContent && btn.textContent.includes('Fullscreen')) {
+                        btn.style.display = 'none';
+                        btn.style.visibility = 'hidden';
+                    }
+                });
+
+                // 3. 既知のIDも再度念押しで消す
+                const footerIds = ['stFooter', 'stToolbar', 'MainMenu'];
+                footerIds.forEach(id => {
+                    const elem = document.querySelector(`[data-testid="${id}"]`);
+                    if (elem) elem.style.display = 'none';
+                });
             }
+
+            // 読み込み直後と、DOM変化時（画面描画時）にしつこく実行
+            window.addEventListener('load', killFooter);
             
-            // 読み込み完了時と、少し待ってから（動的生成対策）実行
-            window.addEventListener('load', hideFooter);
-            setTimeout(hideFooter, 500);
-            setTimeout(hideFooter, 2000);
+            // MutationObserverでDOMの変化を監視して即座に消す
+            const observer = new MutationObserver(killFooter);
+            observer.observe(document.body, { childList: true, subtree: true });
+            
+            // 念のための定期実行（1秒おき）
+            setInterval(killFooter, 1000);
         </script>
     """, unsafe_allow_html=True)
+    # ▲▲▲ 修正ここまで ▲▲▲
 
-    # URLパラメータ取得（安全策）
+    # URLパラメータ取得
     try:
         query_params = st.query_params
     except Exception:
@@ -73,15 +105,16 @@ try:
 
     is_user_view = "view" in query_params and query_params["view"] == "user"
 
+    # ユーザーモード時のサイドバー非表示（CSSではなくロジックで制御する場合の補助）
     if is_user_view:
-        st.markdown("""<style>[data-testid="stSidebar"] { display: none; }</style>""", unsafe_allow_html=True)
+        st.markdown("""<style>[data-testid="stSidebar"] { display: none !important; }</style>""", unsafe_allow_html=True)
 
     # 設定値
     LOG_FILE = "search_log.csv"
     ADMIN_PASSWORD = "admin"
     LOG_COLUMNS = ["日時", "検索キーワード", "対象サービス", "推奨結果", "AI回答(抜粋)"]
 
-    # 関数定義
+    # --- 関数定義 ---
     def save_log(keyword, company_name, is_recommended, full_answer):
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         clean_answer = full_answer[:100].replace("\n", " ").replace(",", "、") + "..."
@@ -116,10 +149,9 @@ try:
         is_recommended = company_name.lower() in answer.lower()
         return True, is_recommended, answer
 
-    # APIキー取得（超安全策）
+    # APIキー取得
     def get_secret_key():
         try:
-            # st.secretsへのアクセス自体をtryで囲む
             if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
                 return st.secrets["OPENAI_API_KEY"]
         except Exception:
@@ -130,7 +162,7 @@ try:
     api_key = ""
     view_mode = "🔍 ユーザー検索画面" 
 
-    # サイドバー構築
+    # サイドバー構築（管理者モード用）
     st.sidebar.title("🛠 設定・メニュー")
     input_api_key = st.sidebar.text_input("OpenAI API Key", value=default_key, type="password")
     api_key = input_api_key
@@ -142,12 +174,12 @@ try:
     else:
         view_mode = view_mode_select
 
-    # 画面表示ロジック
+    # --- 画面表示ロジック ---
     if view_mode == "🔍 ユーザー検索画面":
         if not is_user_view:
             st.title("🤖 AI検索・推奨チェッカー")
         else:
-            st.write("")
+            st.write("") # 埋め込み時の上部マージン調整
 
         with st.container(border=True):
             st.markdown("### 🔍 自社指名検索チェック")
