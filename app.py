@@ -17,17 +17,16 @@ try:
     # CSSデザイン
     st.markdown("""
         <style>
-            header {visibility: hidden;}
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            .block-container {
-                padding-top: 1rem;
-                padding-bottom: 1rem;
+            /* サイドバーを非表示 */
+            [data-testid="stSidebar"] {
+                display: none;
             }
-            div.stButton > button {
-                width: 100%;
-                font-weight: bold;
+            /* "Built with Streamlit" フッターを非表示 */
+            footer {
+                visibility: hidden;
             }
+            /* 右上のハンバーガーメニューも消したい場合は以下を追加 */
+            /* #MainMenu {visibility: hidden;} */
         </style>
     """, unsafe_allow_html=True)
 
