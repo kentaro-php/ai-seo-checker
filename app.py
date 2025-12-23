@@ -21,12 +21,21 @@ try:
             [data-testid="stSidebar"] {
                 display: none;
             }
-            /* "Built with Streamlit" フッターを非表示 */
+            
+            /* "Built with Streamlit" フッターを完全に消す（スペースも詰める） */
             footer {
-                visibility: hidden;
+                display: none !important;
             }
-            /* 右上のハンバーガーメニューも消したい場合は以下を追加 */
-            /* #MainMenu {visibility: hidden;} */
+
+            /* ページ上部の装飾バー（カラーライン）や右上のメニューも隠したい場合 */
+            header {
+                visibility: hidden !important;
+            }
+            
+            /* 右上の「...」メニューなども完全に消す場合 */
+            #MainMenu {
+                display: none !important;
+            }
         </style>
     """, unsafe_allow_html=True)
 
