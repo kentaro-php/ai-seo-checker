@@ -14,39 +14,55 @@ try:
 
     # --- ここからメインのアプリ処理 ---
 
-    # CSSデザイン（強力版）
+   # CSSデザイン（最強力版：CSS + JS注入）
     st.markdown("""
         <style>
-            /* サイドバーを非表示（ユーザーモード用） */
-            [data-testid="stSidebar"] {
-                display: none;
-            }
-            
-            /* "Built with Streamlit" フッターを徹底的に消す */
-            footer, [data-testid="stFooter"] {
-                display: none !important;
+            /* 1. 標準的なフッター要素を消す */
+            footer {
                 visibility: hidden !important;
+                display: none !important;
                 height: 0px !important;
                 opacity: 0 !important;
-                overflow: hidden !important;
-            }
-
-            /* 右上の装飾バー（ヘッダー）を隠す */
-            header, [data-testid="stHeader"] {
-                visibility: hidden !important;
             }
             
-            /* 右上の「...」メニューを隠す */
-            #MainMenu {
+            /* 2. Streamlitの特定IDを持つフッター領域を消す */
+            [data-testid="stFooter"] {
+                display: none !important;
+                visibility: hidden !important;
+            }
+
+            /* 3. 新しいバージョンで表示されるツールバーや装飾を消す */
+            [data-testid="stToolbar"], [data-testid="stHeader"] {
+                visibility: hidden !important;
                 display: none !important;
             }
             
-            /* アプリ全体の余白調整（上が空きすぎる場合用） */
-            .block-container {
-                padding-top: 1rem !important;
+            /* 4. アプリ全体のラッパー下部の余白を強制的にゼロにする */
+            .main .block-container {
                 padding-bottom: 0rem !important;
             }
+            
+            /* 5. iframe埋め込み時のビューワー用フッター対策 */
+            .viewerBadge_container__1QSob {
+                display: none !important;
+            }
         </style>
+        
+        <script>
+            // JavaScriptでダメ押し：DOM要素が見つかり次第、強制的にスタイルを書き換える
+            const hideFooter = () => {
+                const footers = document.querySelectorAll('footer');
+                footers.forEach(f => { f.style.display = 'none'; f.style.visibility = 'hidden'; });
+                
+                const stFooters = document.querySelectorAll('[data-testid="stFooter"]');
+                stFooters.forEach(f => { f.style.display = 'none'; });
+            }
+            
+            // 読み込み完了時と、少し待ってから（動的生成対策）実行
+            window.addEventListener('load', hideFooter);
+            setTimeout(hideFooter, 500);
+            setTimeout(hideFooter, 2000);
+        </script>
     """, unsafe_allow_html=True)
 
     # URLパラメータ取得（安全策）
