@@ -19,31 +19,49 @@ if is_user_view:
     st.markdown(
         """
         <style>
-            /* サイドバー全体を強制非表示 */
-            [data-testid="stSidebar"] {
+            /* サイドバー全体を強制非表示 (複数のセレクタで念入りに) */
+            section[data-testid="stSidebar"],
+            [data-testid="stSidebar"],
+            div[data-testid="stSidebarNav"] {
                 display: none !important;
+                visibility: hidden !important;
+                width: 0 !important;
             }
+
             /* サイドバーを開く矢印ボタン（collapsedControl）を強制非表示 */
-            [data-testid="collapsedControl"] {
+            /* バージョン差異を吸収するため複数の可能性を指定 */
+            [data-testid="collapsedControl"],
+            [data-testid="stSidebarCollapsedControl"],
+            button[kind="header"],
+            button[title="Expand sidebar"] {
                 display: none !important;
+                visibility: hidden !important;
             }
-            section[data-testid="stSidebar"] {
+            
+            /* ヘッダー全体（ハンバーガーメニュー含む）も消して埋め込み感を出す */
+            header[data-testid="stHeader"] {
                 display: none !important;
+                visibility: hidden !important;
+                height: 0 !important;
             }
+            
             /* スマホ用ハンバーガーメニューとフッターも隠す */
             #MainMenu {
-                visibility: hidden !important;
+                display: none !important;
             }
             footer {
-                visibility: hidden !important;
+                display: none !important;
             }
-            /* 必要であればヘッダーの余白も調整 */
-            header[data-testid="stHeader"] {
-                visibility: hidden !important;
-            }
-            /* 全体の余白調整（埋め込み時に上が空きすぎないようにする） */
+
+            /* 全体の余白調整（ヘッダーを消した分、上に詰める） */
             .block-container {
                 padding-top: 1rem !important;
+                margin-top: 0 !important;
+            }
+            
+            /* iframe内でのスクロールバー調整（任意） */
+            .main .block-container {
+                max-width: 100%;
             }
         </style>
         """,
