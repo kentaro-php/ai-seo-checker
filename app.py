@@ -14,86 +14,37 @@ try:
 
     # --- メイン処理 ---
 
-    # ▼▼▼【修正箇所】最強力版：テキスト検索型JS + CSS ▼▼▼
+    # CSSデザイン（隠蔽工作版）
     st.markdown("""
         <style>
-            /* 念のためのCSS指定（標準的なクラス用） */
-            footer, header, [data-testid="stFooter"], [data-testid="stToolbar"], [data-testid="stHeader"] {
+            /* 念のための非表示設定（効けばラッキー） */
+            footer, header, [data-testid="stFooter"], [data-testid="stHeader"] {
                 visibility: hidden !important;
                 display: none !important;
-                height: 0px !important;
-                opacity: 0 !important;
-                overflow: hidden !important;
             }
-            /* アプリ下部の余白削除 */
-            .main .block-container {
-                padding-bottom: 0rem !important;
+
+            /* 【ここが重要】フッターの上に「白い幕」を被せる */
+            .footer-cover {
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+                height: 50px; /* フッターが隠れる高さ */
+                background: white; /* 背景色（アプリの背景に合わせて変更） */
+                z-index: 9999999; /* 最前面に表示 */
+                pointer-events: none; /* 操作を阻害しない */
             }
-            /* iframe埋め込み時の下部バー対策 */
-            .viewerBadge_container__1QSob, .styles_viewerBadge__1yB5_, .viewerFooter_container__2KkK5 {
-                display: none !important;
+            
+            /* スマホで見た時の調整（必要なら） */
+            @media (max-width: 640px) {
+                .footer-cover {
+                    height: 60px;
+                }
             }
         </style>
-
-        <script>
-            // 【最終手段】DOM内のテキストを検索して、該当要素の親を強制的に消す関数
-            function killFooter() {
-                // 1. "Built with Streamlit" を含む要素を探す
-                const allElements = document.querySelectorAll('*');
-                allElements.forEach(el => {
-                    // テキストノードを持ち、かつ "Built with Streamlit" を含む場合
-                    if (el.textContent && el.textContent.includes('Built with Streamlit')) {
-                        // その要素自体、もしくは親要素がフッターっぽい場合は消す
-                        // （誤爆を防ぐため、position: fixed や bottom: 0 のスタイルを持つ親まで遡る）
-                        let target = el;
-                        for (let i = 0; i < 5; i++) { // 親を5階層までチェック
-                            if (!target) break;
-                            const style = window.getComputedStyle(target);
-                            // フッター特有のスタイルやタグ名を検知
-                            if (
-                                target.tagName === 'FOOTER' || 
-                                style.position === 'fixed' || 
-                                style.bottom === '0px' ||
-                                target.getAttribute('data-testid') === 'stFooter' ||
-                                target.className.includes('viewerBadge')
-                            ) {
-                                target.style.display = 'none';
-                                target.style.visibility = 'hidden';
-                                target.style.setProperty('display', 'none', 'important');
-                                break;
-                            }
-                            target = target.parentElement;
-                        }
-                    }
-                });
-                
-                // 2. "Fullscreen" ボタンも同様に消す（埋め込みモード用）
-                const buttons = document.querySelectorAll('button');
-                buttons.forEach(btn => {
-                    if (btn.textContent && btn.textContent.includes('Fullscreen')) {
-                        btn.style.display = 'none';
-                        btn.style.visibility = 'hidden';
-                    }
-                });
-
-                // 3. 既知のIDも再度念押しで消す
-                const footerIds = ['stFooter', 'stToolbar', 'MainMenu'];
-                footerIds.forEach(id => {
-                    const elem = document.querySelector(`[data-testid="${id}"]`);
-                    if (elem) elem.style.display = 'none';
-                });
-            }
-
-            // 読み込み直後と、DOM変化時（画面描画時）にしつこく実行
-            window.addEventListener('load', killFooter);
-            
-            // MutationObserverでDOMの変化を監視して即座に消す
-            const observer = new MutationObserver(killFooter);
-            observer.observe(document.body, { childList: true, subtree: true });
-            
-            // 念のための定期実行（1秒おき）
-            setInterval(killFooter, 1000);
-        </script>
+        
+        <div class="footer-cover"></div>
+        
     """, unsafe_allow_html=True)
     # ▲▲▲ 修正ここまで ▲▲▲
 
