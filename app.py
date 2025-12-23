@@ -4,6 +4,18 @@ import datetime
 import os
 from openai import OpenAI
 
+if "embed" in query_params:
+    st.markdown(
+        """
+        <style>
+            [data-testid="stSidebar"] {
+                display: none;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 # --- 設定 ---
 LOG_FILE = "search_log.csv"
 ADMIN_PASSWORD = "admin"  # 管理者パスワード
