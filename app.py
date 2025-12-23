@@ -5,64 +5,40 @@ import os
 from openai import OpenAI
 
 # --- 1. Streamlitの基本設定 ---
-# initial_sidebar_state="collapsed" にすることで、万が一表示されても閉じた状態にします
-st.set_page_config(page_title="LLOM Checker", layout="wide", initial_sidebar_state="collapsed")
+# layout="centered" にすることで幅を狭くし、スマホや埋め込み時に見やすくします
+st.set_page_config(page_title="LLOM Checker", layout="centered")
 
-# --- 2. URLパラメータによるモード判定 ---
-# 最新のStreamlitでは st.query_params を使用
+# --- 2. デザイン調整用CSS（ロゴ削除・余白調整・ダークモード最適化） ---
+st.markdown("""
+    <style>
+        /* ヘッダー、フッター、ハンバーガーメニューを隠す */
+        header {visibility: hidden;}
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        
+        /* 上部の余白を削除して、iframe埋め込み時に詰まって見えるようにする */
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+        }
+        
+        /* ボタンのデザイン微調整 */
+        div.stButton > button {
+            width: 100%;
+            font-weight: bold;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- 3. URLパラメータ取得とサイドバー制御 ---
 query_params = st.query_params
-# ?view=user があるかどうかでフラグを立てる
-is_user_view = query_params.get("view") == "user"
+is_user_view = "view" in query_params and query_params["view"] == "user"
 
-# ユーザーモードの場合、CSSでハンバーガーメニューなども完全に隠す
 if is_user_view:
     st.markdown(
         """
         <style>
-            /* サイドバー全体を強制非表示 (複数のセレクタで念入りに) */
-            section[data-testid="stSidebar"],
-            [data-testid="stSidebar"],
-            div[data-testid="stSidebarNav"] {
-                display: none !important;
-                visibility: hidden !important;
-                width: 0 !important;
-            }
-
-            /* サイドバーを開く矢印ボタン（collapsedControl）を強制非表示 */
-            /* バージョン差異を吸収するため複数の可能性を指定 */
-            [data-testid="collapsedControl"],
-            [data-testid="stSidebarCollapsedControl"],
-            button[kind="header"],
-            button[title="Expand sidebar"] {
-                display: none !important;
-                visibility: hidden !important;
-            }
-            
-            /* ヘッダー全体（ハンバーガーメニュー含む）も消して埋め込み感を出す */
-            header[data-testid="stHeader"] {
-                display: none !important;
-                visibility: hidden !important;
-                height: 0 !important;
-            }
-            
-            /* スマホ用ハンバーガーメニューとフッターも隠す */
-            #MainMenu {
-                display: none !important;
-            }
-            footer {
-                display: none !important;
-            }
-
-            /* 全体の余白調整（ヘッダーを消した分、上に詰める） */
-            .block-container {
-                padding-top: 1rem !important;
-                margin-top: 0 !important;
-            }
-            
-            /* iframe内でのスクロールバー調整（任意） */
-            .main .block-container {
-                max-width: 100%;
-            }
+            [data-testid="stSidebar"] { display: none; }
         </style>
         """,
         unsafe_allow_html=True
@@ -70,30 +46,22 @@ if is_user_view:
 
 # --- 設定 ---
 LOG_FILE = "search_log.csv"
-ADMIN_PASSWORD = "admin" # 本番環境ではこれも secrets.toml で管理推奨
+ADMIN_PASSWORD = "admin"
 LOG_COLUMNS = ["日時", "検索キーワード", "対象サービス", "推奨結果", "AI回答(抜粋)"]
 
-# --- 関数: ログ保存 (簡易排他制御付き) ---
+# --- 関数: ログ保存 ---
 def save_log(keyword, company_name, is_recommended, full_answer):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # 改行やカンマを除去してCSV崩れを防ぐ
-    clean_answer = full_answer[:100].replace("\n", " ").replace(",", "、").replace('"', '') + "..."
-    
+    clean_answer = full_answer[:100].replace("\n", " ").replace(",", "、") + "..."
     new_data = pd.DataFrame([[
         timestamp, keyword, company_name, "〇" if is_recommended else "×", clean_answer
     ]], columns=LOG_COLUMNS)
     
-    try:
-        # ファイルが存在しない場合は新規作成
-        if not os.path.exists(LOG_FILE) or os.stat(LOG_FILE).st_size == 0:
-            new_data.to_csv(LOG_FILE, index=False, encoding="utf-8-sig")
-        else:
-            # 追記モード
-            new_data.to_csv(LOG_FILE, mode='a', header=False, index=False, encoding="utf-8-sig")
-    except PermissionError:
-        st.error("ログファイルの書き込みに失敗しました。他のプロセスが開いている可能性があります。")
-    except Exception as e:
-        st.error(f"ログ保存エラー: {e}")
+    # 排他制御は簡易的ですが、ファイルが存在しない場合のハンドリングを含めます
+    if not os.path.exists(LOG_FILE) or os.stat(LOG_FILE).st_size == 0:
+        new_data.to_csv(LOG_FILE, index=False, encoding="utf-8-sig")
+    else:
+        new_data.to_csv(LOG_FILE, mode='a', header=False, index=False, encoding="utf-8-sig")
 
 # --- 関数: ログ読み込み ---
 def load_log():
@@ -101,176 +69,118 @@ def load_log():
         return pd.DataFrame(columns=LOG_COLUMNS)
     try:
         df = pd.read_csv(LOG_FILE)
-        # 必要なカラムがあるかチェック
-        if not set(["日時", "検索キーワード"]).issubset(df.columns):
-            return pd.DataFrame(columns=LOG_COLUMNS) # 形式が違う場合は空を返す
         return df
     except Exception:
         return None
 
 # --- 関数: LLOMチェック実行 ---
 def check_llom(api_key, keyword, company_name):
-    if not api_key:
-        return False, False, "APIキーが設定されていません。"
-        
     try:
         client = OpenAI(api_key=api_key)
-        
-        # プロンプトエンジニアリング: 明確なフォーマットを指定
         prompt = f"""
-        あなたはSEOとローカル検索の専門家です。
-        以下のユーザーの検索意図に基づき、具体的におすすめのサービス・店舗・商品を厳選して5つリストアップしてください。
+        あなたはユーザーの役に立つ検索アシスタントです。
+        以下の質問に対して、具体的におすすめのサービスや商品、店舗名を5つリストアップして教えてください。
+        それぞれの特徴も一言で添えてください。
         
-        検索キーワード: 「{keyword}」
-        
-        条件:
-        1. ユーザーが本当に満足できる質の高いものを提案すること。
-        2. 実在する名称であること。
-        3. 各推奨項目の特徴を簡潔に説明すること。
+        質問: 「{keyword}」
         """
-        
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=500,
-            temperature=0.7
+            max_tokens=500
         )
         answer = response.choices[0].message.content
-        
-        # 判定ロジック: 自社名が含まれているか（大文字小文字無視）
+        # 判定ロジック：社名が含まれているか（簡易判定）
         is_recommended = company_name.lower() in answer.lower()
-        
         return True, is_recommended, answer
     except Exception as e:
         return False, False, str(e)
 
-# --- メインロジック ---
+# --- メイン処理 ---
 
-# SecretsからAPIキーを取得 (ユーザー/管理者共通)
-# .streamlit/secrets.toml がない場合のフォールバック用に空文字を設定
-api_key = st.secrets.get("OPENAI_API_KEY", "")
+# APIキーとモードの初期化
+api_key = ""
+view_mode = "🔍 ユーザー検索画面" # デフォルト
 
-# 画面モードの変数を初期化
-current_mode = "user" # デフォルト
+# Secretsのロード
+default_key = st.secrets.get("OPENAI_API_KEY", "") if "OPENAI_API_KEY" in st.secrets else ""
 
+# 管理者モード用サイドバー（ユーザーモードではCSSで非表示になるが、HTML構造上は存在する）
+st.sidebar.title("🛠 設定・メニュー")
+input_api_key = st.sidebar.text_input("OpenAI API Key", value=default_key, type="password")
+api_key = input_api_key
+
+st.sidebar.markdown("---")
+view_mode_select = st.sidebar.radio("表示モード", ["🔍 ユーザー検索画面", "📊 管理者ダッシュボード"])
+
+# モード決定
 if is_user_view:
-    # --- A. ユーザー埋め込みモード ---
-    # サイドバーのコードは一切実行しない
-    current_mode = "user"
-    
+    view_mode = "🔍 ユーザー検索画面"
 else:
-    # --- B. 管理者・通常アクセスモード ---
-    # ここでのみ st.sidebar を使用する
-    st.sidebar.title("🛠 設定・メニュー")
-    
-    # APIキーの上書き設定（Secretsがない場合用）
-    input_api_key = st.sidebar.text_input("OpenAI API Key", value=api_key, type="password", help="secrets.toml未設定時に使用")
-    if input_api_key:
-        api_key = input_api_key
-        
-    st.sidebar.markdown("---")
-    
-    # モード切替
-    mode_selection = st.sidebar.radio("表示モード", ["🔍 ユーザー検索画面", "📊 管理者ダッシュボード"])
-    
-    if mode_selection == "🔍 ユーザー検索画面":
-        current_mode = "user"
-    else:
-        current_mode = "admin"
+    view_mode = view_mode_select
 
-# --- 画面描画 ---
-
-if current_mode == "user":
-    # === 1. ユーザー検索画面 ===
-    # 埋め込み時の見栄えを考慮し、タイトルは控えめ、またはHTML側で制御
+# === 1. ユーザー検索画面 ===
+if view_mode == "🔍 ユーザー検索画面":
     if not is_user_view:
         st.title("🤖 AI検索・推奨チェッカー")
-    
-    # シンプルな入力フォーム
-    with st.container():
-        col1, col2 = st.columns(2)
-        with col1:
-            keyword = st.text_input("狙っているキーワード", placeholder="例：渋谷 イタリアン デート")
-        with col2:
-            company = st.text_input("確認したい自社名", placeholder="例：渋谷トラットリア")
+    else:
+        st.write("") # 上部の微調整
+
+    with st.container(border=True):
+        st.markdown("### 🔍 自社指名検索チェック")
+        keyword = st.text_input("検索キーワード", placeholder="例：渋谷 居酒屋 デート")
+        company = st.text_input("確認したい自社名", placeholder="例：〇〇ダイニング")
             
-        check_btn = st.button("チェック開始", type="primary", use_container_width=True)
+        check_btn = st.button("チェック開始", type="primary")
     
     if check_btn:
-        if not keyword or not company:
-            st.warning("キーワードと自社名の両方を入力してください。")
+        if not api_key:
+            st.error("APIキーが設定されていません。")
+        elif not keyword or not company:
+            st.warning("項目をすべて入力してください。")
         else:
             with st.spinner("AIが検索結果を分析中..."):
                 success, is_rec, answer = check_llom(api_key, keyword, company)
                 
                 if success:
-                    # ログ保存
                     save_log(keyword, company, is_rec, answer)
-                    
                     st.divider()
                     if is_rec:
-                        st.success(f"🎉 **おめでとうございます！「{company}」は推奨されています！**")
-                        st.balloons()
+                        st.success(f"🎉 **「{company}」は推奨されています！**")
                     else:
-                        st.error(f"⚠️ **残念ながら「{company}」は推奨リストに入っていません。**")
-                        st.info("💡 ヒント: SEO対策やMEO対策を見直すチャンスです。")
+                        st.error(f"⚠️ **圏外です（推奨リストに含まれていません）**")
                     
-                    with st.expander("AIによる推奨リスト詳細", expanded=True):
+                    with st.expander("AIの回答詳細を見る", expanded=False):
                         st.markdown(answer)
                 else:
-                    st.error(f"エラーが発生しました: {answer}")
+                    st.error(f"APIエラー: {answer}")
 
-elif current_mode == "admin":
-    # === 2. 管理者ダッシュボード ===
-    st.title("📊 管理者ダッシュボード")
-    st.markdown("ここではユーザーの検索履歴とAIの推奨状況を確認できます。")
-    
-    # パスワード認証
+# === 2. 管理者ダッシュボード ===
+elif view_mode == "📊 管理者ダッシュボード":
+    st.title("管理者用: 需要分析")
     password = st.sidebar.text_input("管理者パスワード", type="password")
     
     if password == ADMIN_PASSWORD:
-        st.success("認証成功: 管理者モード")
-        
-        # データの読み込み
+        st.success("ログイン成功")
         df = load_log()
         
         if df is not None and not df.empty:
-            # メトリクス表示
-            m1, m2, m3 = st.columns(3)
-            m1.metric("総検索回数", len(df))
-            recommended_count = len(df[df["推奨結果"] == "〇"])
-            m2.metric("推奨成功数", recommended_count)
-            m3.metric("推奨率", f"{recommended_count / len(df) * 100:.1f}%")
-            
             st.subheader("📋 最新の検索ログ")
-            # データフレームを表示（最新順）
-            st.dataframe(
-                df.sort_values("日時", ascending=False),
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(df.sort_values("日時", ascending=False), use_container_width=True)
             
-            # ダウンロードボタン
+            st.subheader("📈 キーワード分析")
+            if "検索キーワード" in df.columns:
+                st.bar_chart(df["検索キーワード"].value_counts())
+            
             csv = df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                "📥 CSVログをダウンロード",
-                data=csv,
-                file_name=f'llom_logs_{datetime.date.today()}.csv',
-                mime='text/csv'
-            )
+            st.download_button("CSVダウンロード", data=csv, file_name='llom_logs.csv', mime='text/csv')
             
-            # データ管理
-            with st.expander("⚠️ 危険地帯: データ管理"):
-                st.warning("データを削除すると元に戻せません。")
-                if st.button("ログを全て削除する", type="primary"):
+            with st.expander("⚠️ 危険な操作"):
+                 if st.button("ログを全削除する", type="primary"):
                     if os.path.exists(LOG_FILE):
                         os.remove(LOG_FILE)
-                        st.success("ログを削除しました。")
                         st.rerun()
         else:
-            st.info("まだ検索ログがありません。ユーザー画面で検索を試してください。")
-            
-    elif password:
-        st.error("パスワードが違います。")
+            st.info("データがまだありません。")
     else:
-        st.warning("サイドバーで管理者パスワードを入力してください。")
+        st.warning("閲覧するにはサイドバーで管理者パスワードを入力してください")
