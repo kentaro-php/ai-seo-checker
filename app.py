@@ -14,27 +14,37 @@ try:
 
     # --- ここからメインのアプリ処理 ---
 
-    # CSSデザイン
+    # CSSデザイン（強力版）
     st.markdown("""
         <style>
-            /* サイドバーを非表示 */
+            /* サイドバーを非表示（ユーザーモード用） */
             [data-testid="stSidebar"] {
                 display: none;
             }
             
-            /* "Built with Streamlit" フッターを完全に消す（スペースも詰める） */
-            footer {
+            /* "Built with Streamlit" フッターを徹底的に消す */
+            footer, [data-testid="stFooter"] {
                 display: none !important;
+                visibility: hidden !important;
+                height: 0px !important;
+                opacity: 0 !important;
+                overflow: hidden !important;
             }
 
-            /* ページ上部の装飾バー（カラーライン）や右上のメニューも隠したい場合 */
-            header {
+            /* 右上の装飾バー（ヘッダー）を隠す */
+            header, [data-testid="stHeader"] {
                 visibility: hidden !important;
             }
             
-            /* 右上の「...」メニューなども完全に消す場合 */
+            /* 右上の「...」メニューを隠す */
             #MainMenu {
                 display: none !important;
+            }
+            
+            /* アプリ全体の余白調整（上が空きすぎる場合用） */
+            .block-container {
+                padding-top: 1rem !important;
+                padding-bottom: 0rem !important;
             }
         </style>
     """, unsafe_allow_html=True)
