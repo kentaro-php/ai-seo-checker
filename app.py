@@ -19,11 +19,32 @@ if is_user_view:
     st.markdown(
         """
         <style>
-            [data-testid="stSidebar"] {display: none;}
-            [data-testid="collapsedControl"] {display: none;}
-            section[data-testid="stSidebar"] {display: none;}
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
+            /* サイドバー全体を強制非表示 */
+            [data-testid="stSidebar"] {
+                display: none !important;
+            }
+            /* サイドバーを開く矢印ボタン（collapsedControl）を強制非表示 */
+            [data-testid="collapsedControl"] {
+                display: none !important;
+            }
+            section[data-testid="stSidebar"] {
+                display: none !important;
+            }
+            /* スマホ用ハンバーガーメニューとフッターも隠す */
+            #MainMenu {
+                visibility: hidden !important;
+            }
+            footer {
+                visibility: hidden !important;
+            }
+            /* 必要であればヘッダーの余白も調整 */
+            header[data-testid="stHeader"] {
+                visibility: hidden !important;
+            }
+            /* 全体の余白調整（埋め込み時に上が空きすぎないようにする） */
+            .block-container {
+                padding-top: 1rem !important;
+            }
         </style>
         """,
         unsafe_allow_html=True
