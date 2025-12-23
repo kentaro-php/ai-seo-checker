@@ -49,3 +49,4 @@ tzdata==2025.3
 urllib3==2.6.2
 gspread
 oauth2client
+google-auth==2.23.0
