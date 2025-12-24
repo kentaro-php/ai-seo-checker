@@ -6,28 +6,26 @@ import os
 # --- 1. Streamlitの基本設定 ---
 st.set_page_config(page_title="LLOM Checker", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 2. [重要] 完全シームレス化のためのCSS ---
-# 枠線、ヘッダー、フッター、フルスクリーンボタン等をすべて非表示にします
+# --- 2. [最強版] シームレス化のためのCSS ---
+# これで「枠線」「フッター」「ヘッダー」をすべて強制的に消します
 hide_streamlit_style = """
 <style>
     /* 1. ヘッダー（右上のハンバーガーメニューやDeployボタン）を消す */
     header {
-        visibility: hidden;
-        height: 0px;
+        visibility: hidden !important;
+        height: 0px !important;
+        display: none !important;
     }
     
-    /* 2. フッター（Built with Streamlit）を消す */
+    /* 2. フッター（Built with Streamlit / Fullscreen）を消す */
+    /* 埋め込みモードのフッターバーもこれで消えます */
     footer {
-        visibility: hidden;
-        height: 0px;
+        visibility: hidden !important;
+        height: 0px !important;
+        display: none !important;
     }
     
-    /* 3. 画像や要素ごとのフルスクリーンボタンを消す */
-    button[title="View fullscreen"] {
-        visibility: hidden;
-    }
-    
-    /* 4. アプリ全体の余白を極限まで削る */
+    /* 3. アプリ全体の余白を削除 */
     .block-container {
         padding-top: 0rem !important;
         padding-bottom: 0rem !important;
@@ -35,14 +33,21 @@ hide_streamlit_style = """
         padding-right: 1rem !important;
     }
     
-    /* 5. iframe埋め込み時の枠線対策（念のため） */
+    /* 4. iframe埋め込み時の枠線対策 */
     iframe {
         border: none !important;
     }
     
+    /* 5. 万が一コンテナの枠線が残ってしまっても、強制的に消すCSS */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        border: none !important;
+        box-shadow: none !important;
+        background-color: transparent !important;
+    }
+    
     /* 6. ビューワーバッジなどを消す */
     .stAppDeployButton {
-        display: none;
+        display: none !important;
     }
 </style>
 """
@@ -56,8 +61,8 @@ if is_user_view:
     st.markdown(
         """
         <style>
-            [data-testid="stSidebar"] { display: none; }
-            section[data-testid="stSidebar"] { display: none; }
+            [data-testid="stSidebar"] { display: none !important; }
+            section[data-testid="stSidebar"] { display: none !important; }
         </style>
         """,
         unsafe_allow_html=True
@@ -91,7 +96,6 @@ def load_log():
         return None
 
 def check_llom(api_key, keyword, company_name):
-    # 遅延インポート
     from openai import OpenAI
     try:
         client = OpenAI(api_key=api_key)
@@ -130,7 +134,7 @@ else:
 # === 画面表示 ===
 if view_mode == "🔍 ユーザー検索画面":
     
-    # ▼【修正箇所】border=True を削除しました
+    # 【ここが重要】border=True を削除し、さらにCSSで強制排除
     with st.container(): 
         col1, col2 = st.columns(2)
         with col1:
