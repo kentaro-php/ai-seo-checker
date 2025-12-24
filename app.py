@@ -2,43 +2,47 @@ import streamlit as st
 import pandas as pd
 import datetime
 import os
-# OpenAIのインポートはここで行わず、関数内で遅延読み込みして起動速度を上げます
 
 # --- 1. Streamlitの基本設定 ---
 st.set_page_config(page_title="LLOM Checker", layout="wide", initial_sidebar_state="collapsed")
 
-# --- 2. [重要] シームレス化のためのCSS注入 ---
-# これにより、Streamlit特有のヘッダーや余白を消し、LPに溶け込ませます
+# --- 2. [重要] 完全シームレス化のためのCSS ---
+# 枠線、ヘッダー、フッター、フルスクリーンボタン等をすべて非表示にします
 hide_streamlit_style = """
 <style>
-    /* ヘッダー（ハンバーガーメニューなど）を非表示または透明化 */
-    header[data-testid="stHeader"] {
+    /* 1. ヘッダー（右上のハンバーガーメニューやDeployボタン）を消す */
+    header {
         visibility: hidden;
         height: 0px;
     }
     
-    /* アプリ全体の背景色を強制的に白に（テーマ設定と二重で保証） */
-    .stApp {
-        background-color: #ffffff;
+    /* 2. フッター（Built with Streamlit）を消す */
+    footer {
+        visibility: hidden;
+        height: 0px;
     }
-
-    /* 上部の余白を削除して、iframeの上端に詰める */
+    
+    /* 3. 画像や要素ごとのフルスクリーンボタンを消す */
+    button[title="View fullscreen"] {
+        visibility: hidden;
+    }
+    
+    /* 4. アプリ全体の余白を極限まで削る */
     .block-container {
-        padding-top: 1rem !important;
+        padding-top: 0rem !important;
         padding-bottom: 0rem !important;
         padding-left: 1rem !important;
         padding-right: 1rem !important;
     }
     
-    /* フッター（Made with Streamlit）を非表示 */
-    footer {
-        visibility: hidden;
-        display: none;
-    }
-    
-    /* 埋め込み時の枠線などがもしあれば消す */
+    /* 5. iframe埋め込み時の枠線対策（念のため） */
     iframe {
         border: none !important;
+    }
+    
+    /* 6. ビューワーバッジなどを消す */
+    .stAppDeployButton {
+        display: none;
     }
 </style>
 """
@@ -48,7 +52,6 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 query_params = st.query_params
 is_user_view = "view" in query_params and query_params["view"] == "user"
 
-# ユーザー表示時はサイドバーを完全に隠すCSSを追加
 if is_user_view:
     st.markdown(
         """
@@ -88,9 +91,8 @@ def load_log():
         return None
 
 def check_llom(api_key, keyword, company_name):
-    # 【高速化】OpenAIライブラリはボタンが押された時だけインポートする
+    # 遅延インポート
     from openai import OpenAI
-    
     try:
         client = OpenAI(api_key=api_key)
         prompt = f"""
@@ -112,16 +114,13 @@ def check_llom(api_key, keyword, company_name):
         return False, False, str(e)
 
 # --- メイン処理 ---
-# APIキー取得ロジック
 default_key = st.secrets.get("OPENAI_API_KEY", "") if "OPENAI_API_KEY" in st.secrets else ""
 input_api_key = ""
 
-# 表示モード判定
 if is_user_view:
     view_mode = "🔍 ユーザー検索画面"
-    api_key = default_key # ユーザーモードではSecretsを優先
+    api_key = default_key
 else:
-    # 管理者モード時のみサイドバーを表示
     st.sidebar.title("🛠 設定")
     input_api_key = st.sidebar.text_input("OpenAI API Key", value=default_key, type="password")
     api_key = input_api_key
@@ -130,18 +129,15 @@ else:
 
 # === 画面表示 ===
 if view_mode == "🔍 ユーザー検索画面":
-    # タイトルはLP側にあるので、ここでのst.titleは削除または空にする
-    # st.write("") # 上部余白調整用（CSSで制御するため削除でも可）
-
-    # 枠線(border=True)を削除し、フラットなデザインにする
-    with st.container():
+    
+    # ▼【修正箇所】border=True を削除しました
+    with st.container(): 
         col1, col2 = st.columns(2)
         with col1:
             keyword = st.text_input("キーワード", placeholder="例：渋谷 居酒屋 デート", label_visibility="visible")
         with col2:
             company = st.text_input("自社名", placeholder="例：〇〇ダイニング", label_visibility="visible")
             
-        # ボタンのスタイル調整はCSSで行うが、primaryタイプを使用
         check_btn = st.button("AIでチェックする", type="primary", use_container_width=True)
     
     if check_btn:
