@@ -1,93 +1,102 @@
 import streamlit as st
-import traceback
+import pandas as pd
+import datetime
+import os
+# OpenAIのインポートはここで行わず、関数内で遅延読み込みして起動速度を上げます
 
-# --- 診断モード: エラー捕捉用ラッパー ---
-try:
-    # 1. 基本設定（必ず最初に記述）
-    st.set_page_config(page_title="LLOM Checker", layout="centered")
+# --- 1. Streamlitの基本設定 ---
+st.set_page_config(page_title="LLOM Checker", layout="wide", initial_sidebar_state="collapsed")
 
-    # 2. ライブラリインポート
-    import pandas as pd
-    import datetime
-    import os
-    from openai import OpenAI
+# --- 2. [重要] シームレス化のためのCSS注入 ---
+# これにより、Streamlit特有のヘッダーや余白を消し、LPに溶け込ませます
+hide_streamlit_style = """
+<style>
+    /* ヘッダー（ハンバーガーメニューなど）を非表示または透明化 */
+    header[data-testid="stHeader"] {
+        visibility: hidden;
+        height: 0px;
+    }
+    
+    /* アプリ全体の背景色を強制的に白に（テーマ設定と二重で保証） */
+    .stApp {
+        background-color: #ffffff;
+    }
 
-    # --- メイン処理 ---
+    /* 上部の余白を削除して、iframeの上端に詰める */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 0rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+    
+    /* フッター（Made with Streamlit）を非表示 */
+    footer {
+        visibility: hidden;
+        display: none;
+    }
+    
+    /* 埋め込み時の枠線などがもしあれば消す */
+    iframe {
+        border: none !important;
+    }
+</style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-    # CSSデザイン（隠蔽工作版）
-    st.markdown("""
+# --- 3. URLパラメータ処理 ---
+query_params = st.query_params
+is_user_view = "view" in query_params and query_params["view"] == "user"
+
+# ユーザー表示時はサイドバーを完全に隠すCSSを追加
+if is_user_view:
+    st.markdown(
+        """
         <style>
-            /* 念のための非表示設定（効けばラッキー） */
-            footer, header, [data-testid="stFooter"], [data-testid="stHeader"] {
-                visibility: hidden !important;
-                display: none !important;
-            }
-
-            /* 【ここが重要】フッターの上に「白い幕」を被せる */
-            .footer-cover {
-                position: fixed;
-                bottom: 0;
-                left: 0;
-                width: 100%;
-                height: 50px; /* フッターが隠れる高さ */
-                background: white; /* 背景色（アプリの背景に合わせて変更） */
-                z-index: 9999999; /* 最前面に表示 */
-                pointer-events: none; /* 操作を阻害しない */
-            }
-            
-            /* スマホで見た時の調整（必要なら） */
-            @media (max-width: 640px) {
-                .footer-cover {
-                    height: 60px;
-                }
-            }
+            [data-testid="stSidebar"] { display: none; }
+            section[data-testid="stSidebar"] { display: none; }
         </style>
-        
-        <div class="footer-cover"></div>
-        
-    """, unsafe_allow_html=True)
-    # ▲▲▲ 修正ここまで ▲▲▲
+        """,
+        unsafe_allow_html=True
+    )
 
-    # URLパラメータ取得
+# --- 設定 ---
+LOG_FILE = "search_log.csv"
+ADMIN_PASSWORD = "admin"
+LOG_COLUMNS = ["日時", "検索キーワード", "対象サービス", "推奨結果", "AI回答(抜粋)"]
+
+# --- 関数群 ---
+def save_log(keyword, company_name, is_recommended, full_answer):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    clean_answer = full_answer[:100].replace("\n", " ").replace(",", "、") + "..."
+    new_data = pd.DataFrame([[
+        timestamp, keyword, company_name, "〇" if is_recommended else "×", clean_answer
+    ]], columns=LOG_COLUMNS)
+    
+    if not os.path.exists(LOG_FILE) or os.stat(LOG_FILE).st_size == 0:
+        new_data.to_csv(LOG_FILE, index=False, encoding="utf-8-sig")
+    else:
+        new_data.to_csv(LOG_FILE, mode='a', header=False, index=False, encoding="utf-8-sig")
+
+def load_log():
+    if not os.path.exists(LOG_FILE) or os.stat(LOG_FILE).st_size == 0:
+        return pd.DataFrame(columns=LOG_COLUMNS)
     try:
-        query_params = st.query_params
+        df = pd.read_csv(LOG_FILE)
+        return df
     except Exception:
-        query_params = {}
+        return None
 
-    is_user_view = "view" in query_params and query_params["view"] == "user"
-
-    # ユーザーモード時のサイドバー非表示（CSSではなくロジックで制御する場合の補助）
-    if is_user_view:
-        st.markdown("""<style>[data-testid="stSidebar"] { display: none !important; }</style>""", unsafe_allow_html=True)
-
-    # 設定値
-    LOG_FILE = "search_log.csv"
-    ADMIN_PASSWORD = "admin"
-    LOG_COLUMNS = ["日時", "検索キーワード", "対象サービス", "推奨結果", "AI回答(抜粋)"]
-
-    # --- 関数定義 ---
-    def save_log(keyword, company_name, is_recommended, full_answer):
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        clean_answer = full_answer[:100].replace("\n", " ").replace(",", "、") + "..."
-        new_data = pd.DataFrame([[
-            timestamp, keyword, company_name, "〇" if is_recommended else "×", clean_answer
-        ]], columns=LOG_COLUMNS)
-        
-        if not os.path.exists(LOG_FILE) or os.stat(LOG_FILE).st_size == 0:
-            new_data.to_csv(LOG_FILE, index=False, encoding="utf-8-sig")
-        else:
-            new_data.to_csv(LOG_FILE, mode='a', header=False, index=False, encoding="utf-8-sig")
-
-    def load_log():
-        if not os.path.exists(LOG_FILE) or os.stat(LOG_FILE).st_size == 0:
-            return pd.DataFrame(columns=LOG_COLUMNS)
-        return pd.read_csv(LOG_FILE)
-
-    def check_llom(api_key, keyword, company_name):
+def check_llom(api_key, keyword, company_name):
+    # 【高速化】OpenAIライブラリはボタンが押された時だけインポートする
+    from openai import OpenAI
+    
+    try:
         client = OpenAI(api_key=api_key)
         prompt = f"""
         あなたはユーザーの役に立つ検索アシスタントです。
         以下の質問に対して、具体的におすすめのサービスや商品、店舗名を5つリストアップして教えてください。
+        それぞれの特徴も一言で添えてください。
         
         質問: 「{keyword}」
         """
@@ -99,81 +108,73 @@ try:
         answer = response.choices[0].message.content
         is_recommended = company_name.lower() in answer.lower()
         return True, is_recommended, answer
+    except Exception as e:
+        return False, False, str(e)
 
-    # APIキー取得
-    def get_secret_key():
-        try:
-            if hasattr(st, "secrets") and "OPENAI_API_KEY" in st.secrets:
-                return st.secrets["OPENAI_API_KEY"]
-        except Exception:
-            pass
-        return ""
+# --- メイン処理 ---
+# APIキー取得ロジック
+default_key = st.secrets.get("OPENAI_API_KEY", "") if "OPENAI_API_KEY" in st.secrets else ""
+input_api_key = ""
 
-    default_key = get_secret_key()
-    api_key = ""
-    view_mode = "🔍 ユーザー検索画面" 
-
-    # サイドバー構築（管理者モード用）
-    st.sidebar.title("🛠 設定・メニュー")
+# 表示モード判定
+if is_user_view:
+    view_mode = "🔍 ユーザー検索画面"
+    api_key = default_key # ユーザーモードではSecretsを優先
+else:
+    # 管理者モード時のみサイドバーを表示
+    st.sidebar.title("🛠 設定")
     input_api_key = st.sidebar.text_input("OpenAI API Key", value=default_key, type="password")
     api_key = input_api_key
-    st.sidebar.markdown("---")
-    view_mode_select = st.sidebar.radio("表示モード", ["🔍 ユーザー検索画面", "📊 管理者ダッシュボード"])
+    view_mode_select = st.sidebar.radio("モード", ["🔍 ユーザー検索画面", "📊 管理者ダッシュボード"])
+    view_mode = view_mode_select
 
-    if is_user_view:
-        view_mode = "🔍 ユーザー検索画面"
-    else:
-        view_mode = view_mode_select
+# === 画面表示 ===
+if view_mode == "🔍 ユーザー検索画面":
+    # タイトルはLP側にあるので、ここでのst.titleは削除または空にする
+    # st.write("") # 上部余白調整用（CSSで制御するため削除でも可）
 
-    # --- 画面表示ロジック ---
-    if view_mode == "🔍 ユーザー検索画面":
-        if not is_user_view:
-            st.title("🤖 AI検索・推奨チェッカー")
+    # 枠線(border=True)を削除し、フラットなデザインにする
+    with st.container():
+        col1, col2 = st.columns(2)
+        with col1:
+            keyword = st.text_input("キーワード", placeholder="例：渋谷 居酒屋 デート", label_visibility="visible")
+        with col2:
+            company = st.text_input("自社名", placeholder="例：〇〇ダイニング", label_visibility="visible")
+            
+        # ボタンのスタイル調整はCSSで行うが、primaryタイプを使用
+        check_btn = st.button("AIでチェックする", type="primary", use_container_width=True)
+    
+    if check_btn:
+        if not api_key:
+            st.error("システムエラー: API設定を確認してください")
+        elif not keyword or not company:
+            st.warning("キーワードと自社名を入力してください")
         else:
-            st.write("") # 埋め込み時の上部マージン調整
+            with st.spinner("AIが検索結果を分析中..."):
+                success, is_rec, answer = check_llom(api_key, keyword, company)
+                
+                if success:
+                    save_log(keyword, company, is_rec, answer)
+                    st.divider()
+                    if is_rec:
+                        st.success(f"🎉 **「{company}」は推奨されています！**")
+                    else:
+                        st.error(f"⚠️ **圏外です** (推奨リストに含まれていません)")
+                    
+                    with st.expander("詳細な分析結果を見る", expanded=False):
+                        st.markdown(answer)
+                else:
+                    st.error(f"エラーが発生しました: {answer}")
 
-        with st.container(border=True):
-            st.markdown("### 🔍 AI検索チェック")
-            keyword = st.text_input("検索キーワード", placeholder="例：渋谷 居酒屋 デート")
-            company = st.text_input("確認したい自社名", placeholder="例：〇〇ダイニング")
-            check_btn = st.button("チェック開始", type="primary")
-        
-        if check_btn:
-            if not api_key:
-                st.error("APIキーが設定されていません。")
-            elif not keyword or not company:
-                st.warning("項目をすべて入力してください。")
-            else:
-                with st.spinner("AI分析中..."):
-                    try:
-                        success, is_rec, answer = check_llom(api_key, keyword, company)
-                        if success:
-                            save_log(keyword, company, is_rec, answer)
-                            st.divider()
-                            if is_rec:
-                                st.success(f"🎉 **「{company}」は推奨されています！**")
-                            else:
-                                st.error(f"⚠️ **圏外です**")
-                            with st.expander("詳細"):
-                                st.markdown(answer)
-                        else:
-                            st.error(f"エラー: {answer}")
-                    except Exception as e:
-                        st.error(f"実行エラー: {e}")
-
-    elif view_mode == "📊 管理者ダッシュボード":
-        st.title("管理者用: 需要分析")
-        password = st.sidebar.text_input("管理者パスワード", type="password")
-        if password == ADMIN_PASSWORD:
-            st.success("ログイン成功")
-            df = load_log()
-            if df is not None and not df.empty:
-                st.dataframe(df.sort_values("日時", ascending=False), use_container_width=True)
-                csv = df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("CSVダウンロード", data=csv, file_name='llom_logs.csv', mime='text/csv')
-            else:
-                st.info("データなし")
-
-except Exception:
-    st.error("🚨 アプリ起動中にエラーが発生しました")
-    st.code(traceback.format_exc())
+elif view_mode == "📊 管理者ダッシュボード":
+    st.title("管理者ダッシュボード")
+    password = st.sidebar.text_input("管理者パスワード", type="password")
+    
+    if password == ADMIN_PASSWORD:
+        st.success("認証成功")
+        df = load_log()
+        if df is not None and not df.empty:
+            st.dataframe(df.sort_values("日時", ascending=False), use_container_width=True)
+            st.download_button("CSVダウンロード", data=df.to_csv(index=False).encode('utf-8-sig'), file_name='log.csv')
+        else:
+            st.info("データなし")
